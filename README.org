@@ -40,7 +40,11 @@ Once installed, you can use the following interactive commands (=M-x=):
 - =magit-remote-link-browse-at-point=: Open the URL of the remote repository and the line at the
   point or in the active region in a browser.
 
-Both commands prompt for the remote to link to.
+Both commands prompt for the remote to link to. Buffers showing another revision (such as blame
+or blob buffers) always link to that revision. With a prefix argument (=C-u=) they produce a
+/permalink/ that points at the current commit instead of the current branch, so the link stays valid
+as the branch moves. The commit must be pushed for the link to resolve. A detached =HEAD= always
+produces a permalink.
 
 To use these functions, navigate to a file in a Git repository in magit and place the cursor on a
 line or select a region to specify the line number or range. Then use the key binding you configured

@@ -77,6 +77,16 @@
   (should-error (mrl-format-url "https://github.com/a/b" "main" "a" 1 nil 'nonesuch)
                 :type 'user-error))
 
+(ert-deftest mrl-format-permalink ()
+  (let ((hash "0123456789abcdef"))
+    (should (equal (mrl-format-url "https://github.com/me/repo" hash "a.el" 4 nil nil nil t)
+                   "https://github.com/me/repo/blob/0123456789abcdef/a.el#L4"))
+    (should (equal (mrl-format-url "https://codeberg.org/me/repo" hash "a.el" 4 nil nil nil t)
+                   "https://codeberg.org/me/repo/src/commit/0123456789abcdef/a.el#L4"))
+    (should (equal (mrl-format-url "https://git.savannah.nongnu.org/git/org-mode.git"
+                                   hash "lisp/org.el" 7 nil nil nil t)
+                   "https://cgit.git.savannah.nongnu.org/cgit/org-mode.git/tree/lisp/org.el?id=0123456789abcdef#n7"))))
+
 (defmacro mrl-test-with-repo (&rest body)
   "Run BODY in a fresh repo on branch main with two commits and a file a.el.
 `default-directory' is the repository root and the file is open in the
@@ -102,10 +112,26 @@ current buffer, with ten lines of text."
   (should (zerop (apply #'process-file "git" nil nil nil
                         "-c" "user.name=T" "-c" "user.email=t@example.org" args))))
 
-(defun mrl-test-url (&optional remote)
+(defun mrl-test-url (&optional permalink remote)
   "Return `mrl--current-url' as if REMOTE (default \"origin\") was chosen."
   (cl-letf (((symbol-function 'magit-read-remote) (lambda (&rest _) (or remote "origin"))))
-    (mrl--current-url)))
+    (mrl--current-url permalink)))
+
+(ert-deftest mrl-current-ref ()
+  (mrl-test-with-repo
+    (let ((head (magit-rev-parse "HEAD"))
+          (first (magit-rev-parse "HEAD~1"))
+          (magit-buffer-revision nil))
+      (should (equal (mrl--current-ref nil) '("main")))
+      (should (equal (mrl--current-ref t) (cons head t)))
+      ;; A buffer showing another revision links to that revision.
+      (let ((magit-buffer-revision "HEAD~1"))
+        (should (equal (mrl--current-ref nil) (cons first t))))
+      (let ((magit-buffer-revision "no-such-rev"))
+        (should-error (mrl--current-ref nil) :type 'user-error))
+      ;; A detached HEAD can only be linked by hash.
+      (mrl-test-git "checkout" "-q" "--detach")
+      (should (equal (mrl--current-ref nil) (cons head t))))))
 
 (ert-deftest mrl-current-lines ()
   (mrl-test-with-repo
@@ -133,25 +159,25 @@ current buffer, with ten lines of text."
   (mrl-test-with-repo
     (goto-char (point-min)) (forward-line 2)
     (should (equal (mrl-test-url) "https://github.com/me/repo/blob/main/a.el#L3"))
-    ;; A detached HEAD is linked by hash.
-    (mrl-test-git "checkout" "-q" "--detach")
-    (should (string-match-p "/blob/[0-9a-f]\\{40\\}/a\\.el#L3\\'" (mrl-test-url)))))
+    (let ((hash (magit-rev-parse "HEAD")))
+      (should (equal (mrl-test-url t)
+                     (format "https://github.com/me/repo/blob/%s/a.el#L3" hash))))))
 
 (ert-deftest mrl-current-url-git-config-overrides ()
   (mrl-test-with-repo
     (mrl-test-git "remote" "add" "web" "https://git.example.com/x/y.git")
-    (should (equal (mrl-test-url "web") "https://git.example.com/x/y/blob/main/a.el#L1"))
+    (should (equal (mrl-test-url nil "web") "https://git.example.com/x/y/blob/main/a.el#L1"))
     (mrl-test-git "config" "remote.web.magit-remote-link-provider" "cgit")
     (mrl-test-git "config" "remote.web.magit-remote-link-url" "https://web.example.com/cgit/y.git/")
-    (should (equal (mrl-test-url "web")
+    (should (equal (mrl-test-url nil "web")
                    "https://web.example.com/cgit/y.git/tree/a.el?h=main#n1"))))
 
 (ert-deftest mrl-current-url-errors ()
   (mrl-test-with-repo
-    (should-error (mrl-test-url "nonexistent") :type 'user-error))
+    (should-error (mrl-test-url nil "nonexistent") :type 'user-error))
   (mrl-test-with-repo
     (mrl-test-git "remote" "add" "local" "/some/local/path")
-    (should-error (mrl-test-url "local") :type 'user-error))
+    (should-error (mrl-test-url nil "local") :type 'user-error))
   (with-temp-buffer
     (let ((default-directory temporary-file-directory))
       (should-error (mrl-test-url) :type 'user-error))))
@@ -162,10 +188,10 @@ current buffer, with ten lines of text."
       (cl-letf (((symbol-function 'magit-read-remote) (lambda (&rest _) "origin"))
                 ((symbol-function 'kill-new) (lambda (s) (setq copied s)))
                 ((symbol-function 'browse-url) (lambda (u) (setq opened u))))
-        (magit-remote-link-copy-at-point)
-        (magit-remote-link-browse-at-point))
+        (magit-remote-link-copy-at-point nil)
+        (magit-remote-link-browse-at-point '(4)))
       (should (equal copied "https://github.com/me/repo/blob/main/a.el#L1"))
-      (should (equal opened copied)))))
+      (should (string-match-p "/blob/[0-9a-f]\\{40\\}/a\\.el#L1\\'" opened)))))
 
 (ert-deftest mrl-expand-web-url ()
   (string-match "\\`\\(.*\\)/\\(.*\\)\\'" "grp/repo")

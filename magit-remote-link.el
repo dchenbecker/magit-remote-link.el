@@ -31,7 +31,8 @@
 ;;; Commentary:
 
 ;; Copy or browse the web URL of the line or region at point on the remote
-;; hosting service (GitHub, GitLab, cgit, ...).  Hosts are recognized by
+;; hosting service (GitHub, GitLab, cgit, ...).  A prefix argument links to the
+;; current commit instead of the branch.  Hosts are recognized by
 ;; `magit-remote-link-hosts', and a single remote can be configured with the git
 ;; config keys `remote.NAME.magit-remote-link-provider' and
 ;; `remote.NAME.magit-remote-link-url'.
@@ -56,12 +57,12 @@
   '((github    "%w/blob/%b/%f#L%l"            "%w/blob/%b/%f#L%l-L%e")
     (gitlab    "%w/-/blob/%b/%f#L%l"          "%w/-/blob/%b/%f#L%l-%e")
     (bitbucket "%w/src/%b/%f#lines-%l"        "%w/src/%b/%f#lines-%l:%e")
-    (gitea     "%w/src/branch/%b/%f#L%l"      "%w/src/branch/%b/%f#L%l-L%e")
-    (codeberg  "%w/src/branch/%b/%f#L%l"      "%w/src/branch/%b/%f#L%l-L%e")
+    (gitea     "%w/src/%t/%b/%f#L%l"          "%w/src/%t/%b/%f#L%l-L%e")
+    (codeberg  "%w/src/%t/%b/%f#L%l"          "%w/src/%t/%b/%f#L%l-L%e")
     (sourcehut "%w/tree/%b/item/%f#L%l"       "%w/tree/%b/item/%f#L%l-%e")
     (notabug   "%w/src/%b/%f#L%l"             "%w/src/%b/%f#L%l-L%e")
     ;; cgit has no range anchors, so a region links to its first line.
-    (cgit      "%w/tree/%f?h=%b#n%l"          "%w/tree/%f?h=%b#n%l"))
+    (cgit      "%w/tree/%f?%k=%b#n%l"         "%w/tree/%f?%k=%b#n%l"))
   "A list of git hosting providers and their file URL layouts.
 Each item is a list of three elements:
   - the name of the provider (a symbol)
@@ -69,7 +70,9 @@ Each item is a list of three elements:
   - a template for the URL of a region of a file
 Templates are expanded with `format-spec' using these specs:
   - %w, the web base URL of the repository
-  - %b, the branch name or commit hash
+  - %b, the branch name or, for a permalink, the commit hash
+  - %t, \"branch\" or, for a permalink, \"commit\" (Gitea-style paths)
+  - %k, \"h\" or, for a permalink, \"id\" (the cgit query key for %b)
   - %f, the file path relative to the repository root
   - %l, the line number (the first line of a region)
   - %e, the last line of a region"
@@ -168,12 +171,13 @@ a `github'-style layout under the remote's own host."
   "Percent-encode PATH for use in a URL, keeping its slashes."
   (mapconcat #'url-hexify-string (split-string path "/") "/"))
 
-(defun mrl-format-url (remote-url branch file line end &optional provider web-url)
+(defun mrl-format-url (remote-url ref file line end &optional provider web-url permalink)
   "Build the web URL of FILE at LINE (to END if non-nil) in REMOTE-URL.
-BRANCH is a branch name or commit hash and FILE is relative to the
-repository root.  PROVIDER (a symbol) and WEB-URL override what
-`magit-remote-link-hosts' would infer from REMOTE-URL.  Signal a
-`user-error' if REMOTE-URL cannot be parsed or PROVIDER is unknown."
+REF is a branch name, or a commit hash if PERMALINK is non-nil, and
+FILE is relative to the repository root.  PROVIDER (a symbol) and WEB-URL
+override what `magit-remote-link-hosts' would infer from REMOTE-URL.
+Signal a `user-error' if REMOTE-URL cannot be parsed or PROVIDER is
+unknown."
   (let* ((info (or (mrl--parse-remote-url remote-url)
                    (user-error "Cannot parse remote URL: %s" remote-url)))
          (resolved (mrl--resolve-host info))
@@ -183,10 +187,28 @@ repository root.  PROVIDER (a symbol) and WEB-URL override what
          (template (if end (nth 2 entry) (nth 1 entry))))
     (format-spec template
                  `((?w . ,(string-remove-suffix "/" (or web-url (cdr resolved))))
-                   (?b . ,(mrl--encode-path branch))
+                   (?b . ,(mrl--encode-path ref))
+                   (?t . ,(if permalink "commit" "branch"))
+                   (?k . ,(if permalink "id" "h"))
                    (?f . ,(mrl--encode-path file))
                    (?l . ,(number-to-string line))
                    (?e . ,(and end (number-to-string end)))))))
+
+(defun mrl--current-ref (permalink)
+  "Return (REF . PERMALINK) naming what the URL for this buffer should point at.
+REF is the current branch, or a commit hash when PERMALINK is non-nil,
+HEAD is detached, or the buffer shows a revision other than the working
+tree (such as a blame or blob buffer, whose line numbers only make sense
+for that revision).  The returned PERMALINK says whether REF is a hash."
+  (let ((branch (and (not permalink)
+                     (not magit-buffer-revision)
+                     (magit-get-current-branch))))
+    (if branch
+        (cons branch nil)
+      (let ((rev (or magit-buffer-revision "HEAD")))
+        (cons (or (magit-rev-parse rev)
+                  (user-error "Cannot resolve revision %s" rev))
+              t)))))
 
 (defun mrl--current-lines ()
   "Return (START . END) line numbers for the active region or the current line.
@@ -204,13 +226,14 @@ selection looks like."
            (end-line (line-number-at-pos end t)))
       (cons start-line (and (> end-line start-line) end-line)))))
 
-(defun mrl--current-url ()
-  "Prompt for a remote and return the web URL for the line or region at point."
+(defun mrl--current-url (&optional permalink)
+  "Prompt for a remote and return the web URL for the line or region at point.
+A non-nil PERMALINK links to the commit instead of the current branch."
   (let* ((remote (substring-no-properties (magit-read-remote "Remote repository" "origin")))
          (config (lambda (key)
                    (magit-get "remote" remote (concat "magit-remote-link-" key))))
          (provider (funcall config "provider"))
-         (branch (or (magit-get-current-branch) (magit-rev-parse "HEAD")))
+         (ref (mrl--current-ref permalink))
          (lines (mrl--current-lines))
          ;; Unlike `buffer-file-name', which for a blob at some revision is a
          ;; temporary name like "<file>.~<hash>~", this is always relative to
@@ -219,26 +242,31 @@ selection looks like."
                    (user-error "Buffer is not visiting a file in a Git repository"))))
     (mrl-format-url (or (magit-get "remote" remote "url")
                         (user-error "Remote %s has no URL" remote))
-                    branch
+                    (car ref)
                     file
                     (car lines)
                     (cdr lines)
                     (and provider (intern provider))
-                    (funcall config "url"))))
+                    (funcall config "url")
+                    (cdr ref))))
 
 ;;;###autoload
-(defun magit-remote-link-copy-at-point ()
-  "Copy remote URL with a line at the point or an active region to the clipboard."
-  (interactive)
-  (let ((remote-url (mrl--current-url)))
+(defun magit-remote-link-copy-at-point (permalink)
+  "Copy remote URL with a line at the point or an active region to the clipboard.
+With a prefix argument PERMALINK, link to the current commit instead of
+the current branch so the link stays valid as the branch moves."
+  (interactive "P")
+  (let ((remote-url (mrl--current-url permalink)))
     (kill-new remote-url)
     (message "Copied: %s" remote-url)))
 
 ;;;###autoload
-(defun magit-remote-link-browse-at-point ()
-  "Open remote URL in browser to a line at the point or an active region."
-  (interactive)
-  (let ((remote-url (mrl--current-url)))
+(defun magit-remote-link-browse-at-point (permalink)
+  "Open remote URL in browser to a line at the point or an active region.
+With a prefix argument PERMALINK, link to the current commit instead of
+the current branch so the link stays valid as the branch moves."
+  (interactive "P")
+  (let ((remote-url (mrl--current-url permalink)))
     (browse-url remote-url)
     (message "Opening: %s" remote-url)))
 
