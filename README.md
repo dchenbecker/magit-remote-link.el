@@ -1,30 +1,30 @@
-- [**magit-remote-link.el** &mdash; Actions with remote git hub links.](#org28a35ed)
-- [Installation](#org55528f1)
-  - [use-package](#org52f216c)
-- [Usage](#org96edd82)
-  - [Commands](#org335d068)
-  - [Hosting providers](#orgc0c0613)
-  - [Bindings](#org641a969)
-  - [Tests](#org80877d3)
-- [Future stuff aka TODO](#org3080837)
-- [License](#org1a42d20)
+- [**magit-remote-link.el** &mdash; Actions with remote git hub links.](#org945b3e9)
+- [Installation](#orgb8738dd)
+  - [use-package](#orge6823f5)
+- [Usage](#orga7b4ade)
+  - [Commands](#orgab4f25a)
+  - [Hosting providers](#org9026322)
+  - [Bindings](#orgb442ffb)
+  - [Development](#orgf2433b2)
+- [Future stuff aka TODO](#org9e9b41f)
+- [License](#org61002d9)
 
 
-<a id="org28a35ed"></a>
+<a id="org945b3e9"></a>
 
 # **magit-remote-link.el** &mdash; Actions with remote git hub links.
 
 This package provides functions for copying and opening URLs to specific lines in a Git repository on various hosting services.
 
 
-<a id="org55528f1"></a>
+<a id="orgb8738dd"></a>
 
 # Installation
 
 This package requires `magit` and relies heavily on magit's ability to extract remote repository information from local Git repositories.
 
 
-<a id="org52f216c"></a>
+<a id="orge6823f5"></a>
 
 ## use-package
 
@@ -40,12 +40,12 @@ This package requires `magit` and relies heavily on magit's ability to extract r
 ```
 
 
-<a id="org96edd82"></a>
+<a id="orga7b4ade"></a>
 
 # Usage
 
 
-<a id="org335d068"></a>
+<a id="orgab4f25a"></a>
 
 ## Commands
 
@@ -59,7 +59,7 @@ Both commands prompt for the remote to link to.
 To use these functions, navigate to a file in a Git repository in magit and place the cursor on a line or select a region to specify the line number or range. Then use the key binding you configured or run the function directly to copy or open the URL. The URL will be copied or opened with the line number specified in the URL.
 
 
-<a id="orgc0c0613"></a>
+<a id="org9026322"></a>
 
 ## Hosting providers
 
@@ -87,26 +87,37 @@ Gitea has no built-in host rule, since its servers are self-hosted; select it wi
 Remote URLs may be `https://`, `ssh://`, `git+ssh://` or scp-style (`user@host:path`).
 
 
-<a id="org641a969"></a>
+<a id="orgb442ffb"></a>
 
 ## Bindings
 
 I have [my magit stuff](https://github.com/pkulev/.emacs.d#git-things) binded on the `C-C m` prefix, and for these commands my mnemonics are: Copy a URL pointing to a line or a region in a file to the clipboard is more like `kill-ring-save` (`M-w`) function, so `C-c m w` makes sense for me. Opening the same URL in Web browser is `C-c m W` because of W in the "Web", huh. Obviously `m` stands for `magit`.
 
 
-<a id="org80877d3"></a>
+<a id="orgf2433b2"></a>
 
-## Tests
+## Development
 
-Tests use ERT and need `magit` on the load path:
+Tests use ERT and need `magit` and its dependencies on the load path. The `Makefile` can install them into `.deps/` from ELPA and MELPA:
 
 ```sh
-emacs -Q --batch -L . -L /path/to/magit/deps -l test/magit-remote-link-test.el \
-      -f ert-run-tests-batch-and-exit
+make deps   # install magit and its dependencies
+make test   # run the ERT tests
+make lint   # byte-compile with warnings as errors, then run checkdoc
 ```
 
+A bare `make` runs both `make lint` and `make test`.
 
-<a id="org3080837"></a>
+To use dependencies you already have, pass them as `EMACSFLAGS` instead of running `make deps`:
+
+```sh
+make test EMACSFLAGS="-L ~/src/magit/lisp -L ~/src/llama"
+```
+
+Set `EMACS` to pick another Emacs binary.
+
+
+<a id="org9e9b41f"></a>
 
 # Future stuff aka TODO
 
@@ -118,7 +129,7 @@ emacs -Q --batch -L . -L /path/to/magit/deps -l test/magit-remote-link-test.el \
 -   [ ] Run unit tests via GHA.
 
 
-<a id="org1a42d20"></a>
+<a id="org61002d9"></a>
 
 # License
 
