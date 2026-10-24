@@ -6,7 +6,7 @@
   - [[#commands][Commands]]
   - [[#hosting-providers][Hosting providers]]
   - [[#bindings][Bindings]]
-  - [[#tests][Tests]]
+  - [[#development][Development]]
 - [[#future-stuff-aka-todo][Future stuff aka TODO]]
 - [[#license][License]]
 
@@ -85,13 +85,25 @@ URL pointing to a line or a region in a file to the clipboard is more like =kill
 function, so =C-c m w= makes sense for me.  Opening the same URL in Web browser is =C-c m W= because
 of W in the "Web", huh. Obviously =m= stands for =magit=.
 
-** Tests
-Tests use ERT and need =magit= on the load path:
+** Development
+Tests use ERT and need =magit= and its dependencies on the load path. The =Makefile= can install them
+into =.deps/= from ELPA and MELPA:
 
 #+begin_src sh
-  emacs -Q --batch -L . -L /path/to/magit/deps -l test/magit-remote-link-test.el \
-        -f ert-run-tests-batch-and-exit
+  make deps   # install magit and its dependencies
+  make test   # run the ERT tests
+  make lint   # byte-compile with warnings as errors, then run checkdoc
 #+end_src
+
+A bare =make= runs both =make lint= and =make test=.
+
+To use dependencies you already have, pass them as =EMACSFLAGS= instead of running =make deps=:
+
+#+begin_src sh
+  make test EMACSFLAGS="-L ~/src/magit/lisp -L ~/src/llama"
+#+end_src
+
+Set =EMACS= to pick another Emacs binary.
 
 * Future stuff aka TODO
 - [X] Unit tests! I can check all of this by hands.
